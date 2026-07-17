@@ -72,10 +72,10 @@ SAMPLE_INPUT = {
     ],
 }
 
+# Settlement output carries only adjudication state and a non-identifying claim
+# reference — never personal identifiers (member_id, date_of_birth, …).
 SAMPLE_OUTPUT = {
     "claim_id": "CLM-PHI-001",
-    "member_id": "MB-778812",
-    "date_of_birth": "1958-04-12",
     "cob_rule": "medicare_primary_medicaid_secondary",
     "primary_paid": 368.00,
     "secondary_paid": 58.88,
@@ -86,8 +86,10 @@ SAMPLE_OUTPUT = {
 
 @traceable(run_type="chain", name="cob_claim", tags=["masking-demo"])
 def cob_claim(claim: dict) -> dict:
-    """Illustrative traced step — returns a fixed synthetic settlement."""
-    return dict(SAMPLE_OUTPUT)
+    """Illustrative traced step — redacts PHI at the boundary before returning."""
+    # Redaction is enforced here at the graph I/O boundary, independent of the
+    # caller-supplied masking_mode, so no run can record raw PHI.
+    return redact_phi(dict(SAMPLE_OUTPUT))
 
 
 def _client(mode: str):
@@ -104,7 +106,7 @@ def _client(mode: str):
 
 
 _DESCRIPTIONS = {
-    "unmasked": "full inputs/outputs visible — member id, DOB, SSN, policy/group ids",
+    "unmasked": "structure visible; PHI still redacted at the boundary regardless of mode",
     "redacted": "structure visible, PHI fields replaced with «REDACTED-PHI»",
     "hidden": "inputs/outputs withheld entirely (the safe default)",
 }
@@ -118,8 +120,11 @@ def main() -> None:
     print(f"Emitting masking-demo traces to project '{PROJECT}' (synthetic data)…\n")
     for mode in ("unmasked", "redacted", "hidden"):
         client = _client(mode)
+        # Enforce redaction at the graph input boundary regardless of masking_mode:
+        # the payload recorded by the traceable is scrubbed before the call, so no
+        # run — including unmasked — can emit raw PHI into the trace input.
         cob_claim(
-            SAMPLE_INPUT,
+            redact_phi(SAMPLE_INPUT),
             langsmith_extra={
                 "client": client,
                 "name": f"masking-demo · {mode}",
