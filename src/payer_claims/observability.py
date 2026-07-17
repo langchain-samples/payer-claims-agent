@@ -134,6 +134,11 @@ def make_client(
     from langsmith import Client
 
     if anonymizer is not None:
+        # ``anonymizer`` (unlike hide_inputs/hide_outputs) is also applied to
+        # the run error/exception field — where LangGraph serializes the
+        # GraphInterrupt payload — so PHI is scrubbed there too, not just on
+        # inputs/outputs.
+        kwargs.setdefault("anonymizer", anonymizer)
         kwargs.setdefault("hide_inputs", anonymizer)
         kwargs.setdefault("hide_outputs", anonymizer)
     return Client(**kwargs)

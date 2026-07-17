@@ -14,8 +14,9 @@ Command for combined state-update + routing.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from langgraph.types import Command, interrupt
 
@@ -398,35 +399,45 @@ def human_review(
     primary = state["primary_payer"]
     secondary = state["secondary_payer"]
 
+    # PHI never enters the interrupt value: it is serialized verbatim into the
+    # run's GraphInterrupt error string, which LangSmith ingests and surfaces in
+    # error-filtered views. Stash the full review context in a secured store and
+    # interrupt with only an opaque reference token; the reviewer UI rehydrates
+    # the claim from the store using that token.
+    claim_ref = stash_review_context(
+        {
+            "claim_id": claim.claim_id,
+            "provider_id": claim.provider_id,
+            "dos": claim.date_of_service,
+            "member_id": claim.member.member_id,
+            "cob_rule": state["cob_rule_applied"].value if state["cob_rule_applied"] else "unknown",
+            "primary": {
+                "payer": primary.payer_name,
+                "type": primary.coverage_type.value,
+                "paid": state["primary_total_paid"],
+            },
+            "secondary": {
+                "payer": secondary.payer_name,
+                "type": secondary.coverage_type.value,
+                "paid": state["secondary_total_paid"],
+            } if secondary else None,
+            "lines": [
+                {"id": lid, "code": code, "billed": amt}
+                for lid, code, amt in claim.lines
+            ],
+            "patient_responsibility": state["patient_responsibility"],
+            "pend_reasons": state.get("pend_reasons", []),
+            "intake_confidence": state.get("intake_confidence"),
+            "low_confidence_fields": state.get("low_confidence_fields", []),
+        }
+    )
+
     payload = {
-        "claim_id": claim.claim_id,
-        "provider_id": claim.provider_id,
-        "dos": claim.date_of_service,
-        "member_id": claim.member.member_id,
-        "cob_rule": state["cob_rule_applied"].value if state["cob_rule_applied"] else "unknown",
-        "primary": {
-            "payer": primary.payer_name,
-            "type": primary.coverage_type.value,
-            "paid": state["primary_total_paid"],
-        },
-        "secondary": {
-            "payer": secondary.payer_name,
-            "type": secondary.coverage_type.value,
-            "paid": state["secondary_total_paid"],
-        } if secondary else None,
-        "lines": [
-            {"id": lid, "code": code, "billed": amt}
-            for lid, code, amt in claim.lines
-        ],
-        "patient_responsibility": state["patient_responsibility"],
-        # Why this claim pended + the intake confidence, so the reviewer can
-        # judge whether the flag was warranted (the FP/FN signal).
-        "pend_reasons": state.get("pend_reasons", []),
-        "intake_confidence": state.get("intake_confidence"),
-        "low_confidence_fields": state.get("low_confidence_fields", []),
+        "claim_ref": claim_ref,
         "action": (
-            "Review this COB settlement. Respond with 'approve' | 'deny' | "
-            "'return', or a dict {decision, flag_warranted, intake_correct, notes}."
+            "Review this COB settlement. Look up the claim in the reviewer "
+            "console via claim_ref. Respond with 'approve' | 'deny' | 'return', "
+            "or a dict {decision, flag_warranted, intake_correct, notes}."
         ),
     }
 
@@ -513,6 +524,25 @@ def notify_denial(state: ClaimsState) -> dict:
 # =============================================================================
 # helpers
 # =============================================================================
+
+# Secured, out-of-band store mapping an opaque reference token → the full
+# review context. Keeping the PHI here (rather than in the interrupt value)
+# means it never reaches the serialized GraphInterrupt error string. A
+# production deployment should back this with an access-controlled store; the
+# reviewer UI resolves a token via ``resolve_review_context``.
+_REVIEW_STORE: dict[str, dict[str, Any]] = {}
+
+
+def stash_review_context(context: dict[str, Any]) -> str:
+    """Store review context out-of-band and return an opaque reference token."""
+    token = f"claim-ref-{uuid.uuid4().hex}"
+    _REVIEW_STORE[token] = context
+    return token
+
+
+def resolve_review_context(token: str) -> dict[str, Any] | None:
+    """Look up review context previously stashed under an opaque token."""
+    return _REVIEW_STORE.get(token)
 
 
 def _log(node: str, detail: str) -> str:
