@@ -333,19 +333,25 @@ def finalize_settlement(state: ClaimsState) -> dict:
     else:
         patient = primary_eob.total_patient_portion
 
-    # ── pend gate: two independent reasons to route to a human ─────────────
-    # 1. high-dollar claims (money risk)
-    # 2. low intake confidence (data-quality risk) — the multi-model intake
-    #    verifier wasn't sure it transcribed the claim faithfully.
+    # ── pend gate: only flag claims a reviewer would actually act on ───────
+    # Reviewer feedback showed value-alone and moderate-confidence pends were
+    # routinely approved unchanged (false positives), so both reasons now
+    # require a corroborating data-quality signal before forcing review:
+    #   1. high-dollar claims pend only when intake also flagged weak fields
+    #      (an anomaly/mismatch), not on dollar amount alone.
+    #   2. low intake confidence pends only when genuinely low — moderately
+    #      confident intakes (~0.71) route straight through.
     total_claim = primary_eob.total_billed
     HIGH_THRESHOLD = 5_000.0
-    LOW_CONFIDENCE_THRESHOLD = 0.80
-
-    pend_reasons: list[str] = []
-    if total_claim >= HIGH_THRESHOLD:
-        pend_reasons.append("high_value")
+    LOW_CONFIDENCE_THRESHOLD = 0.65
 
     confidence = state.get("intake_confidence")
+    low_confidence_fields = state.get("low_confidence_fields") or []
+
+    pend_reasons: list[str] = []
+    if total_claim >= HIGH_THRESHOLD and low_confidence_fields:
+        pend_reasons.append("high_value")
+
     if confidence is not None and confidence < LOW_CONFIDENCE_THRESHOLD:
         pend_reasons.append("low_confidence")
 

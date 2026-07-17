@@ -160,8 +160,9 @@ class ClaimsState(TypedDict):
     secondary_total_paid: float
     patient_responsibility: float
     workflow_status: WorkflowStatus
-    # Why the claim pended (empty when auto-settled). Values: "high_value",
-    # "low_confidence". Drives the human-review gate and the FP/FN framing.
+    # Why the claim pended (empty when auto-settled). Values: "high_value"
+    # (only when a data-quality anomaly corroborates), "low_confidence". Drives
+    # the human-review gate and the FP/FN framing.
     pend_reasons: list[str]
 
     # --- Human review ---

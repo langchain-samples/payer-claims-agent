@@ -78,13 +78,34 @@ def test_no_confidence_does_not_pend(graph):
     assert result["pend_reasons"] == []
 
 
-def test_high_value_records_pend_reason(graph):
-    """High-dollar claims still pend, now with an explicit reason."""
+def test_high_value_with_anomaly_records_pend_reason(graph):
+    """High-dollar claims pend only when a data-quality anomaly corroborates."""
     claim = _low_value_single()
     claim.lines = [("L1", "27130", 9500.00)]
     cfg = {"configurable": {"thread_id": "conf-hv"}}
-    result = graph.invoke({"claim": claim}, cfg)
+    result = graph.invoke(
+        {"claim": claim, "low_confidence_fields": ["billed_amount"]}, cfg
+    )
     assert result["pend_reasons"] == ["high_value"]
+
+
+def test_high_value_alone_does_not_pend(graph):
+    """Value alone is a false-positive signal reviewers approve — must not pend."""
+    claim = _low_value_single()
+    claim.lines = [("L1", "27130", 9500.00)]
+    cfg = {"configurable": {"thread_id": "conf-hv-clean"}}
+    result = graph.invoke({"claim": claim}, cfg)
+    assert result["workflow_status"] == WorkflowStatus.SETTLED
+    assert result["pend_reasons"] == []
+
+
+def test_moderate_confidence_routes_straight_through(graph):
+    """A moderately confident intake (~0.71) should no longer pend."""
+    claim = _low_value_single()
+    cfg = {"configurable": {"thread_id": "conf-moderate"}}
+    result = graph.invoke({"claim": claim, "intake_confidence": 0.71}, cfg)
+    assert result["workflow_status"] == WorkflowStatus.SETTLED
+    assert result["pend_reasons"] == []
 
 
 # ── reviewer judgment on resume (FP/FN signal) ───────────────────────────────

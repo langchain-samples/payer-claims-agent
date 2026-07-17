@@ -257,14 +257,27 @@ def test_single_coverage_payment(graph, single_coverage_claim):
 
 def test_high_value_pends_for_review(graph, high_value_dual):
     config = _config(high_value_dual)
-    result = graph.invoke({"claim": high_value_dual}, config)
+    result = graph.invoke(
+        {"claim": high_value_dual, "low_confidence_fields": ["billed_amount"]}, config
+    )
     assert result["workflow_status"] == WorkflowStatus.PENDED_REVIEW
     assert "__interrupt__" in result
 
 
-def test_hitl_approve(graph, high_value_dual):
+def test_high_value_alone_does_not_pend(graph, high_value_dual):
+    """Value alone (no anomaly) is a false positive reviewers approve — no pend."""
     config = _config(high_value_dual)
     result = graph.invoke({"claim": high_value_dual}, config)
+    assert result["workflow_status"] == WorkflowStatus.SETTLED
+    assert result["pend_reasons"] == []
+    assert "__interrupt__" not in result
+
+
+def test_hitl_approve(graph, high_value_dual):
+    config = _config(high_value_dual)
+    result = graph.invoke(
+        {"claim": high_value_dual, "low_confidence_fields": ["billed_amount"]}, config
+    )
     assert "__interrupt__" in result
 
     resumed = graph.invoke(Command(resume="approve"), config)
@@ -274,7 +287,9 @@ def test_hitl_approve(graph, high_value_dual):
 
 def test_hitl_deny(graph, high_value_dual):
     config = _config(high_value_dual)
-    result = graph.invoke({"claim": high_value_dual}, config)
+    result = graph.invoke(
+        {"claim": high_value_dual, "low_confidence_fields": ["billed_amount"]}, config
+    )
     assert "__interrupt__" in result
 
     resumed = graph.invoke(Command(resume="deny"), config)
@@ -284,7 +299,9 @@ def test_hitl_deny(graph, high_value_dual):
 
 def test_hitl_return(graph, high_value_dual):
     config = _config(high_value_dual)
-    result = graph.invoke({"claim": high_value_dual}, config)
+    result = graph.invoke(
+        {"claim": high_value_dual, "low_confidence_fields": ["billed_amount"]}, config
+    )
     assert "__interrupt__" in result
 
     resumed = graph.invoke(Command(resume="return"), config)
