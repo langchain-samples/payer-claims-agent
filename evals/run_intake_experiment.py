@@ -8,7 +8,9 @@ score lift. Both land in LangSmith as comparable experiments.
 Usage::
 
     # needs LANGSMITH_API_KEY + ANTHROPIC_API_KEY
-    uv run python -m evals.run_intake_experiment
+    uv run python -m evals.run_intake_experiment              # PHI redacted (default)
+    uv run python -m evals.run_intake_experiment --unmasked   # inputs/outputs visible
+                                                              # (synthetic data only)
 
 This is the concrete "the eval made the agent better" artifact: open the two
 experiments side-by-side in LangSmith and watch coverage_type_accuracy jump.
@@ -92,14 +94,27 @@ def _print_delta(v1: dict, v2: dict) -> None:
         print(f"  {m:<26} {a:>10.2f}   {b:>12.2f}   {arrow} {b - a:+.2f}")
 
 
-def main() -> None:
-    traced = configure_tracing(project="payer-claims-agent")
-    print(f"tracing enabled: {traced}")
+def main(unmasked: bool = False) -> None:
+    # Default masks/redacts PHI; `unmasked` shows full inputs/outputs and must
+    # ONLY be used with synthetic / non-PHI data.
+    if unmasked:
+        os.environ.pop("LANGSMITH_HIDE_INPUTS", None)
+        os.environ.pop("LANGSMITH_HIDE_OUTPUTS", None)
+        traced = configure_tracing(project="payer-claims-agent", mask_phi=False)
+        client = make_client(anonymizer=None)  # full inputs/outputs visible
+        suffix = "-unmasked"
+        print(f"tracing enabled: {traced} | PHI masking OFF — inputs/outputs VISIBLE")
+        print("  NOTE: unmasked is for SYNTHETIC data only; never run on real PHI.")
+    else:
+        traced = configure_tracing(project="payer-claims-agent")
+        client = make_client()  # PHI-redacted
+        suffix = ""
+        print(f"tracing enabled: {traced} | PHI redacted (default)")
+
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("  ERROR: ANTHROPIC_API_KEY required (intake calls the LLM). Aborting.")
         return
 
-    client = make_client()
     build_intake_dataset(client)
 
     print("\nRunning BASELINE (v1: literal prompt, no escalation)…")
@@ -107,7 +122,7 @@ def main() -> None:
         baseline_target,
         data=INTAKE_DATASET_NAME,
         evaluators=INTAKE_EVALUATORS,
-        experiment_prefix="intake-v1-baseline",
+        experiment_prefix=f"intake-v1-baseline{suffix}",
         max_concurrency=4,
     )
     print("Running IMPROVED (v2: carrier-aware prompt + escalation)…")
@@ -115,7 +130,7 @@ def main() -> None:
         improved_target,
         data=INTAKE_DATASET_NAME,
         evaluators=INTAKE_EVALUATORS,
-        experiment_prefix="intake-v2-improved",
+        experiment_prefix=f"intake-v2-improved{suffix}",
         max_concurrency=4,
     )
 
@@ -131,8 +146,19 @@ def main() -> None:
     except Exception:
         print("  (install pandas for the inline delta; both experiments are in LangSmith)")
 
-    print("\nDone. Compare 'intake-v1-baseline' vs 'intake-v2-improved' in LangSmith.")
+    print(f"\nDone. Compare 'intake-v1-baseline{suffix}' vs "
+          f"'intake-v2-improved{suffix}' in LangSmith.")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--unmasked",
+        action="store_true",
+        help="run with PHI masking OFF so trace inputs/outputs are visible "
+        "(synthetic data only — never real PHI)",
+    )
+    args = parser.parse_args()
+    main(unmasked=args.unmasked)
