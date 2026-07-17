@@ -19,6 +19,7 @@ from typing import Literal
 
 from langgraph.types import Command, interrupt
 
+from .observability import redact_claim
 from .state import (
     COBRule,
     CoverageType,
@@ -29,6 +30,24 @@ from .state import (
     ClaimsState,
     WorkflowStatus,
 )
+
+
+# =============================================================================
+# Node: redact_phi_boundary — unconditional PHI scrub at the pipeline boundary
+# =============================================================================
+
+
+def redact_phi_boundary(state: ClaimsState) -> dict:
+    """Strip raw PHI from the claim before it flows through graph state.
+
+    Applied unconditionally at the intake boundary — never gated on a tracing
+    masking mode — so raw date_of_birth, member_id, group_id, policy_id, and
+    date_of_service never persist in the run's input or downstream state.
+    """
+    claim = state.get("claim")
+    if claim is None:
+        return {}
+    return {"claim": redact_claim(claim)}
 
 
 # =============================================================================
@@ -363,7 +382,7 @@ def finalize_settlement(state: ClaimsState) -> dict:
         f"intake_confidence={conf_str} | "
         f"pend_reasons={pend_reasons or 'none'}",
     )
-    return {
+    update = {
         "primary_total_paid": primary_paid,
         "secondary_total_paid": secondary_paid,
         "patient_responsibility": patient,
@@ -371,6 +390,12 @@ def finalize_settlement(state: ClaimsState) -> dict:
         "pend_reasons": pend_reasons,
         "audit_log": [log_entry],
     }
+    # Re-redact unconditionally at the settlement boundary so no raw PHI can
+    # appear in the emitted/persisted output, even if state was mutated upstream.
+    claim = state.get("claim")
+    if claim is not None:
+        update["claim"] = redact_claim(claim)
+    return update
 
 
 # =============================================================================

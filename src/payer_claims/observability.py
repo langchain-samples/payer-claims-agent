@@ -65,8 +65,51 @@ def redact_phi(value: Any) -> Any:
     return value
 
 
-def _truthy(raw: str | None) -> bool:
-    return (raw or "").strip().lower() in {"1", "true", "yes", "on"}
+def _opaque_ref(value: str) -> str:
+    """Stable, non-reversible correlation key for a redacted identifier."""
+    import hashlib
+
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+    return f"REF-{digest}"
+
+
+def redact_claim(claim: Any) -> Any:
+    """Return a copy of a ``Claim`` with PHI scrubbed at the pipeline boundary.
+
+    Unlike :func:`redact_phi` (which serves the tracing anonymizer and is gated
+    on the masking mode), this is applied unconditionally to the domain object so
+    raw PHI never enters or leaves graph state. ``member_id`` is replaced with an
+    opaque, stable reference so downstream correlation still works; the remaining
+    identifiers become the ``«REDACTED-PHI»`` placeholder.
+    """
+    import dataclasses
+
+    if claim is None or not dataclasses.is_dataclass(claim):
+        return claim
+
+    member = getattr(claim, "member", None)
+    redacted_member = member
+    if member is not None:
+        coverages = [
+            dataclasses.replace(
+                cov,
+                group_id=_REDACTED if getattr(cov, "group_id", "") else cov.group_id,
+                policy_id=_REDACTED if getattr(cov, "policy_id", "") else cov.policy_id,
+            )
+            for cov in getattr(member, "coverages", [])
+        ]
+        redacted_member = dataclasses.replace(
+            member,
+            member_id=_opaque_ref(member.member_id) if member.member_id else member.member_id,
+            date_of_birth=_REDACTED if member.date_of_birth else member.date_of_birth,
+            coverages=coverages,
+        )
+
+    return dataclasses.replace(
+        claim,
+        date_of_service=_REDACTED if claim.date_of_service else claim.date_of_service,
+        member=redacted_member,
+    )
 
 
 def configure_tracing(
@@ -80,12 +123,11 @@ def configure_tracing(
     Args:
         project: LangSmith project name. Falls back to ``LANGSMITH_PROJECT``
             then ``"payer-claims-agent"``.
-        mask_phi: When true (the default), inputs and outputs are hidden from
-            traces so member PHI never reaches LangSmith. Explicitly pass
-            ``False`` (or set ``LANGSMITH_UNMASK_PHI=true``) only in a trusted,
-            compliant environment. When you need redacted-but-visible traces
-            instead of fully hidden IO, keep this ``False`` and construct your
-            tracer client via :func:`make_client` with the anonymizer.
+        mask_phi: Deprecated and ignored. Masking is now unconditional — raw
+            PHI is stripped at the pipeline boundary (see
+            :func:`redact_claim`) and trace IO hiding is always on. The
+            ``"unmasked"`` opt-out (including ``LANGSMITH_UNMASK_PHI``) is
+            hard-disabled so it cannot be selected in production.
         enable: Set to ``False`` to explicitly leave tracing off.
 
     Returns:
@@ -107,15 +149,10 @@ def configure_tracing(
     if project:
         os.environ["LANGSMITH_PROJECT"] = project
 
-    # Fail safe: mask unless the caller/operator explicitly opts out.
-    if mask_phi is None:
-        mask_phi = not _truthy(os.environ.get("LANGSMITH_UNMASK_PHI"))
-
-    if mask_phi:
-        # Hide raw IO from the SaaS backend. This is the blunt-but-safe default
-        # for PHI; use make_client(anonymizer=...) for field-level redaction.
-        os.environ["LANGSMITH_HIDE_INPUTS"] = "true"
-        os.environ["LANGSMITH_HIDE_OUTPUTS"] = "true"
+    # Masking is unconditional: the "unmasked" opt-out is hard-disabled so raw
+    # IO can never be exported regardless of `mask_phi` or LANGSMITH_UNMASK_PHI.
+    os.environ["LANGSMITH_HIDE_INPUTS"] = "true"
+    os.environ["LANGSMITH_HIDE_OUTPUTS"] = "true"
 
     return True
 

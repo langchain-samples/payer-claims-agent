@@ -306,6 +306,65 @@ def test_audit_log_covers_all_nodes(graph, dual_eligible_claim):
     assert nodes == set(), f"Missing audit entries for: {nodes}"
 
 
+# ── PHI redaction at the pipeline boundary ──────────────────────────────────
+
+import re
+
+_SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+_ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+
+
+def _phi_claim() -> Claim:
+    """A claim carrying raw PHI: DOB, SSN-shaped id, member/group/policy ids."""
+    return Claim(
+        claim_id="CLM-PHI",
+        provider_id="PR-1",
+        date_of_service="2025-01-15",
+        member=MemberInfo(
+            member_id="MB-123-45-6789",
+            date_of_birth="1958-04-12",
+            is_employed=False,
+            coverages=[
+                PayerCoverage(
+                    payer_id="EVG001", payer_name="Evergreen Medicare Advantage",
+                    coverage_type=CoverageType.MEDICARE_ADVANTAGE, coverage_percent=0.80,
+                    group_id="GRP-999-88-7777", policy_id="POL-2020-01-01",
+                ),
+                PayerCoverage(
+                    payer_id="MCD001", payer_name="Kentucky Medicaid",
+                    coverage_type=CoverageType.MEDICAID, coverage_percent=0.80,
+                ),
+            ],
+        ),
+        lines=[("L1", "99213", 450.0)],
+    )
+
+
+def test_settlement_output_has_no_raw_phi(graph):
+    """Root settlement output must not contain a raw SSN or ISO date-of-birth."""
+    claim = _phi_claim()
+    result = graph.invoke({"claim": claim}, _config(claim))
+    assert result["workflow_status"] == WorkflowStatus.SETTLED
+
+    out = result["claim"]
+    assert _ISO_DATE_RE.search(out.date_of_service or "") is None
+    assert _ISO_DATE_RE.search(out.member.date_of_birth or "") is None
+    assert _SSN_RE.search(out.member.member_id or "") is None
+    for cov in out.member.coverages:
+        assert _ISO_DATE_RE.search(cov.policy_id or "") is None
+        assert _SSN_RE.search(cov.group_id or "") is None
+
+
+def test_redaction_unconditional_regardless_of_masking(graph, monkeypatch):
+    """Redaction is not gated on the masking mode — the unmasked opt-out is gone."""
+    monkeypatch.setenv("LANGSMITH_UNMASK_PHI", "true")
+    claim = _phi_claim()
+    result = graph.invoke({"claim": claim}, _config(claim))
+    out = result["claim"]
+    assert _ISO_DATE_RE.search(out.member.date_of_birth or "") is None
+    assert _SSN_RE.search(out.member.member_id or "") is None
+
+
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 

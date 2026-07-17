@@ -45,6 +45,7 @@ from .nodes import (
     finalize_settlement,
     human_review,
     notify_denial,
+    redact_phi_boundary,
     route_after_primary,
     route_after_settlement,
     route_after_validation,
@@ -99,6 +100,7 @@ def build_claims_graph(
     # ── nodes ───────────────────────────────────────────────────────────────
     if with_intake:
         builder.add_node("intake_claim", intake_claim)
+    builder.add_node("redact_phi_boundary", redact_phi_boundary)
     builder.add_node("validate_claim", validate_claim)
     builder.add_node("determine_cob", determine_cob)
     builder.add_node("adjudicate_primary", adjudicate_primary)
@@ -110,9 +112,10 @@ def build_claims_graph(
     # ── edges ───────────────────────────────────────────────────────────────
     if with_intake:
         builder.add_edge(START, "intake_claim")
-        builder.add_edge("intake_claim", "validate_claim")
+        builder.add_edge("intake_claim", "redact_phi_boundary")
     else:
-        builder.add_edge(START, "validate_claim")
+        builder.add_edge(START, "redact_phi_boundary")
+    builder.add_edge("redact_phi_boundary", "validate_claim")
 
     builder.add_conditional_edges(
         "validate_claim",
