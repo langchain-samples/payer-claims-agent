@@ -3,7 +3,9 @@
 Usage::
 
     # env: LANGSMITH_API_KEY (+ ANTHROPIC_API_KEY only if you use intake evals)
-    uv run python -m evals.run_experiment
+    uv run python -m evals.run_experiment              # PHI redacted (default)
+    uv run python -m evals.run_experiment --unmasked   # inputs/outputs visible
+                                                       # (synthetic data only)
 
 This closes the "test" loop: it evaluates the current graph against the
 canonical dataset and records an experiment in LangSmith. Regressions show up
@@ -60,19 +62,30 @@ def cob_core_target(inputs: dict) -> dict:
     return _flatten(result)
 
 
-def main() -> None:
-    # Observe: turn on tracing (PHI-masked by default). Safe no-op without a key.
-    traced = configure_tracing(project="payer-claims-agent")
-    print(f"tracing enabled: {traced}")
+def main(unmasked: bool = False) -> None:
+    # Observe: turn on tracing. Default masks/redacts PHI; `unmasked` shows full
+    # inputs/outputs and must ONLY be used with synthetic / non-PHI data.
+    if unmasked:
+        os.environ.pop("LANGSMITH_HIDE_INPUTS", None)
+        os.environ.pop("LANGSMITH_HIDE_OUTPUTS", None)
+        traced = configure_tracing(project="payer-claims-agent", mask_phi=False)
+        client = make_client(anonymizer=None)  # full inputs/outputs visible
+        prefix = "cob-core-unmasked"
+        print(f"tracing enabled: {traced} | PHI masking OFF — inputs/outputs VISIBLE")
+        print("  NOTE: unmasked is for SYNTHETIC data only; never run on real PHI.")
+    else:
+        traced = configure_tracing(project="payer-claims-agent")
+        client = make_client()  # PHI-redacted
+        prefix = "cob-core"
+        print(f"tracing enabled: {traced} | PHI redacted (default)")
 
-    client = make_client()  # PHI-anonymized
     build_dataset(client)   # idempotent
 
     results = client.evaluate(
         cob_core_target,
         data=CORE_DATASET_NAME,
         evaluators=CORE_EVALUATORS,
-        experiment_prefix="cob-core",
+        experiment_prefix=prefix,
         max_concurrency=4,
     )
 
@@ -116,4 +129,14 @@ def _print_confusion(df) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--unmasked",
+        action="store_true",
+        help="run with PHI masking OFF so trace inputs/outputs are visible "
+        "(synthetic data only — never real PHI)",
+    )
+    args = parser.parse_args()
+    main(unmasked=args.unmasked)
