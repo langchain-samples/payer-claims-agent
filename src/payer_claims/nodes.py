@@ -30,6 +30,12 @@ from .state import (
     WorkflowStatus,
 )
 
+# Pend any claim whose intake-extraction confidence falls below this. Set
+# conservatively so the review gate fails safe toward human review: a
+# mis-extracted claim must never auto-settle just because its overall
+# confidence squeaked past a permissive bar.
+INTAKE_CONFIDENCE_THRESHOLD = 0.80
+
 
 # =============================================================================
 # Node: validate_claim
@@ -333,20 +339,26 @@ def finalize_settlement(state: ClaimsState) -> dict:
     else:
         patient = primary_eob.total_patient_portion
 
-    # ── pend gate: two independent reasons to route to a human ─────────────
+    # ── pend gate: independent reasons to route to a human ─────────────────
     # 1. high-dollar claims (money risk)
     # 2. low intake confidence (data-quality risk) — the multi-model intake
     #    verifier wasn't sure it transcribed the claim faithfully.
+    # 3. flagged intake fields (data-quality risk) — the verifier called out
+    #    specific ambiguous/weak fields even if overall confidence cleared the
+    #    bar. Without this guard a mis-extracted claim can auto-settle, a
+    #    review-gate false negative.
     total_claim = primary_eob.total_billed
     HIGH_THRESHOLD = 5_000.0
-    LOW_CONFIDENCE_THRESHOLD = 0.80
 
     pend_reasons: list[str] = []
     if total_claim >= HIGH_THRESHOLD:
         pend_reasons.append("high_value")
 
     confidence = state.get("intake_confidence")
-    if confidence is not None and confidence < LOW_CONFIDENCE_THRESHOLD:
+    low_confidence = confidence is not None and confidence < INTAKE_CONFIDENCE_THRESHOLD
+    # A non-empty flagged-fields list means the verifier flagged specific weak
+    # fields even when overall confidence cleared the threshold — still pend.
+    if low_confidence or state.get("low_confidence_fields"):
         pend_reasons.append("low_confidence")
 
     if pend_reasons:

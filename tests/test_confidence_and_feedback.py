@@ -78,6 +78,28 @@ def test_no_confidence_does_not_pend(graph):
     assert result["pend_reasons"] == []
 
 
+def test_flagged_fields_pend_even_when_confidence_clears_threshold(graph):
+    """A mis-extracted claim (flagged fields) must pend, not auto-finalize.
+
+    Overall confidence clears the auto-settle bar, but the verifier flagged
+    specific weak fields — the review gate must fail safe toward human review
+    rather than let the claim reach finalize_settlement unreviewed.
+    """
+    claim = _low_value_single()
+    cfg = {"configurable": {"thread_id": "conf-flagged"}}
+    result = graph.invoke(
+        {
+            "claim": claim,
+            "intake_confidence": 0.95,
+            "low_confidence_fields": ["member.coverages[0].coverage_type"],
+        },
+        cfg,
+    )
+    assert result["workflow_status"] == WorkflowStatus.PENDED_REVIEW
+    assert result["pend_reasons"] == ["low_confidence"]
+    assert "__interrupt__" in result
+
+
 def test_high_value_records_pend_reason(graph):
     """High-dollar claims still pend, now with an explicit reason."""
     claim = _low_value_single()
