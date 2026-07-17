@@ -140,6 +140,10 @@ class ClaimsState(TypedDict):
     secondary_payer: PayerCoverage | None
     cob_rule_applied: COBRule | None
     is_dual_coverage: bool
+    # True when COB ordering fell through to the generic fallback rule — a
+    # signal the extracted coverage fields are internally inconsistent, which
+    # forces the claim to human_review rather than auto-settle.
+    cob_ambiguous: bool
 
     # --- Per-payer adjudication ---
     primary_eob: PayerEOB | None
@@ -161,7 +165,8 @@ class ClaimsState(TypedDict):
     patient_responsibility: float
     workflow_status: WorkflowStatus
     # Why the claim pended (empty when auto-settled). Values: "high_value",
-    # "low_confidence". Drives the human-review gate and the FP/FN framing.
+    # "low_confidence", "cob_ambiguous". Drives the human-review gate and the
+    # FP/FN framing.
     pend_reasons: list[str]
 
     # --- Human review ---

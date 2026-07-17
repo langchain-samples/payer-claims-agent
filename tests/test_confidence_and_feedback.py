@@ -100,6 +100,35 @@ def test_flagged_fields_pend_even_when_confidence_clears_threshold(graph):
     assert "__interrupt__" in result
 
 
+def test_ambiguous_cob_pends(graph):
+    """Coverages that match no known COB rule must pend, not auto-finalize.
+
+    An ambiguous COB determination signals internally inconsistent extracted
+    coverage fields — the review gate must fail safe rather than auto-settle a
+    likely mis-extracted claim.
+    """
+    claim = _low_value_single()
+    claim.member.coverages = [
+        PayerCoverage(
+            payer_id="EVG001",
+            payer_name="Evergreen Medicare Advantage",
+            coverage_type=CoverageType.MEDICARE_ADVANTAGE,
+            coverage_percent=0.80,
+        ),
+        PayerCoverage(
+            payer_id="EVG002",
+            payer_name="Second Medicare Advantage",
+            coverage_type=CoverageType.MEDICARE_ADVANTAGE,
+            coverage_percent=0.70,
+        ),
+    ]
+    cfg = {"configurable": {"thread_id": "conf-cob-ambiguous"}}
+    result = graph.invoke({"claim": claim}, cfg)
+    assert result["workflow_status"] == WorkflowStatus.PENDED_REVIEW
+    assert "cob_ambiguous" in result["pend_reasons"]
+    assert "__interrupt__" in result
+
+
 def test_high_value_records_pend_reason(graph):
     """High-dollar claims still pend, now with an explicit reason."""
     claim = _low_value_single()

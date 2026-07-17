@@ -179,6 +179,11 @@ def determine_cob(state: ClaimsState) -> dict:
 
     is_dual = secondary is not None
 
+    # The coverages matched no known COB rule, so ordering was decided by the
+    # generic fallback. That usually means the intake extraction produced
+    # coverage/COB fields we can't reconcile — pend rather than auto-settle.
+    cob_ambiguous = rule == COBRule.EMPLOYMENT_RULE
+
     log_entry = _log(
         "determine_cob",
         f"rule={rule.value} | primary={primary.payer_name} ({primary.coverage_type.value})"
@@ -191,6 +196,7 @@ def determine_cob(state: ClaimsState) -> dict:
         "secondary_payer": secondary,
         "cob_rule_applied": rule,
         "is_dual_coverage": is_dual,
+        "cob_ambiguous": cob_ambiguous,
         "audit_log": [log_entry],
     }
 
@@ -347,6 +353,9 @@ def finalize_settlement(state: ClaimsState) -> dict:
     #    specific ambiguous/weak fields even if overall confidence cleared the
     #    bar. Without this guard a mis-extracted claim can auto-settle, a
     #    review-gate false negative.
+    # 4. ambiguous COB (data-quality risk) — determine_cob matched no known
+    #    rule, which signals the extracted coverage fields are internally
+    #    inconsistent. Also a review-gate false negative if auto-settled.
     total_claim = primary_eob.total_billed
     HIGH_THRESHOLD = 5_000.0
 
@@ -360,6 +369,9 @@ def finalize_settlement(state: ClaimsState) -> dict:
     # fields even when overall confidence cleared the threshold — still pend.
     if low_confidence or state.get("low_confidence_fields"):
         pend_reasons.append("low_confidence")
+
+    if state.get("cob_ambiguous"):
+        pend_reasons.append("cob_ambiguous")
 
     if pend_reasons:
         status = WorkflowStatus.PENDED_REVIEW
