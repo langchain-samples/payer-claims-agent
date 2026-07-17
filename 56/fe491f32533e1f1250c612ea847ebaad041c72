@@ -1,0 +1,21 @@
+evals/run_intake_experiment.py
+  s_37cd7fdd0cd304::t_2d67e7a61bdc2d 97-113,125,133
+  s_37cd7fdd0cd304::t_3ca6a5cfeaa8bf 149-150,154-164
+  s_37cd7fdd0cd304::t_3f50a87645dc96 11-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "56fe491f32533e1f1250c612ea847ebaad041c72",
+  "prompts": {},
+  "sessions": {
+    "s_37cd7fdd0cd304": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f02105e9-10a4-4910-a02b-708fdc6bc53e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Eric Johanson <eric.johanson@langchain.dev>"
+    }
+  }
+}
