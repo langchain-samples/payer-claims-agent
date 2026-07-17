@@ -1,0 +1,21 @@
+evals/run_experiment.py
+  s_37cd7fdd0cd304::t_51a6acb4ee6cfc 6-8
+  s_37cd7fdd0cd304::t_cc988cd36b783e 65-80,88
+  s_37cd7fdd0cd304::t_7d828f64b289d6 132-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "d2745ae01bb5efe873176e2081150645749aa954",
+  "prompts": {},
+  "sessions": {
+    "s_37cd7fdd0cd304": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f02105e9-10a4-4910-a02b-708fdc6bc53e",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Eric Johanson <eric.johanson@langchain.dev>"
+    }
+  }
+}
