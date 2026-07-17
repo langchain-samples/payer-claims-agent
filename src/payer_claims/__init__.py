@@ -19,7 +19,7 @@ from .intake import (
     normalize_claim,
     normalize_claim_text,
 )
-from .observability import configure_tracing, make_client, redact_phi
+from .observability import configure_tracing, make_client, redact_phi, run_config
 from .state import (
     Claim,
     ClaimsState,
@@ -38,6 +38,7 @@ __all__ = [
     "configure_tracing",
     "make_client",
     "redact_phi",
+    "run_config",
     "intake_claim",
     "normalize_claim",
     "normalize_claim_text",

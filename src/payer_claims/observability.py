@@ -80,12 +80,12 @@ def configure_tracing(
     Args:
         project: LangSmith project name. Falls back to ``LANGSMITH_PROJECT``
             then ``"payer-claims-agent"``.
-        mask_phi: When true (the default), inputs and outputs are hidden from
-            traces so member PHI never reaches LangSmith. Explicitly pass
-            ``False`` (or set ``LANGSMITH_UNMASK_PHI=true``) only in a trusted,
-            compliant environment. When you need redacted-but-visible traces
-            instead of fully hidden IO, keep this ``False`` and construct your
-            tracer client via :func:`make_client` with the anonymizer.
+        mask_phi: When true (the default), member PHI is redacted at the field
+            level via :func:`redact_phi` while run inputs/outputs are still
+            captured — behavioral evaluation and cost tracking keep working.
+            Explicitly pass ``False`` (or set ``LANGSMITH_UNMASK_PHI=true``)
+            only in a trusted, compliant environment to trace raw, unredacted
+            IO.
         enable: Set to ``False`` to explicitly leave tracing off.
 
     Returns:
@@ -107,17 +107,48 @@ def configure_tracing(
     if project:
         os.environ["LANGSMITH_PROJECT"] = project
 
-    # Fail safe: mask unless the caller/operator explicitly opts out.
+    # Fail safe: redact unless the caller/operator explicitly opts out.
     if mask_phi is None:
         mask_phi = not _truthy(os.environ.get("LANGSMITH_UNMASK_PHI"))
 
+    # Never blanket-hide IO: hiding all inputs/outputs blocks behavioral
+    # evaluation and leaves LLM spans without the payloads cost tracking needs.
+    # Redact PHI at the field level instead, on the process-wide tracing client
+    # that LangGraph's default tracer uses.
+    os.environ.pop("LANGSMITH_HIDE_INPUTS", None)
+    os.environ.pop("LANGSMITH_HIDE_OUTPUTS", None)
     if mask_phi:
-        # Hide raw IO from the SaaS backend. This is the blunt-but-safe default
-        # for PHI; use make_client(anonymizer=...) for field-level redaction.
-        os.environ["LANGSMITH_HIDE_INPUTS"] = "true"
-        os.environ["LANGSMITH_HIDE_OUTPUTS"] = "true"
+        from langsmith import run_trees
+
+        run_trees.get_cached_client(
+            hide_inputs=redact_phi, hide_outputs=redact_phi
+        )
 
     return True
+
+
+ROOT_RUN_NAME = "payer_claims_adjudication"
+
+
+def run_config(
+    *,
+    thread_id: str,
+    user_id: str | None = None,
+    environment: str = "production",
+    run_name: str = ROOT_RUN_NAME,
+    extra_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Invoke config with a descriptive root run_name and root-run metadata (thread_id/environment/user_id); pass the SAME thread_id to the resume turn."""
+    metadata: dict[str, Any] = {"thread_id": thread_id, "environment": environment}
+    if user_id is not None:
+        metadata["user_id"] = user_id
+    if extra_metadata:
+        metadata.update(extra_metadata)
+    return {
+        "run_name": run_name,
+        "configurable": {"thread_id": thread_id},
+        "metadata": metadata,
+    }
 
 
 def make_client(

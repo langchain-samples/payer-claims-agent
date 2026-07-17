@@ -19,7 +19,10 @@ from payer_claims import (
     MemberInfo,
     PayerCoverage,
     build_claims_graph,
+    run_config,
 )
+
+_DEMO_ADJUSTER = "demo-adjuster"
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -169,7 +172,7 @@ def demo_dual_eligible_small():
         ("L1", "99213", 450.00),
         ("L2", "85025", 125.00),
     ])
-    config = {"configurable": {"thread_id": claim.claim_id}}
+    config = run_config(thread_id=claim.claim_id, user_id=_DEMO_ADJUSTER)
 
     result = graph.invoke({"claim": claim}, config)
 
@@ -186,7 +189,7 @@ def demo_dual_eligible_high_value():
     claim = _dual_eligible("CLM-DE-002", [
         ("L1", "27130", 9500.00),
     ])
-    config = {"configurable": {"thread_id": claim.claim_id}}
+    config = run_config(thread_id=claim.claim_id, user_id=_DEMO_ADJUSTER)
 
     # Step 1: invoke → hits interrupt at finalize_settlement
     result = graph.invoke({"claim": claim}, config)
@@ -217,7 +220,7 @@ def demo_working_aged():
     claim = _medicare_commercial_working("CLM-WA-001", [
         ("L1", "99214", 350.00),
     ])
-    config = {"configurable": {"thread_id": claim.claim_id}}
+    config = run_config(thread_id=claim.claim_id, user_id=_DEMO_ADJUSTER)
 
     result = graph.invoke({"claim": claim}, config)
 
@@ -238,7 +241,7 @@ def demo_two_commercials():
         ("L1", "99213", 300.00),
         ("L2", "85025", 80.00),
     ])
-    config = {"configurable": {"thread_id": claim.claim_id}}
+    config = run_config(thread_id=claim.claim_id, user_id=_DEMO_ADJUSTER)
 
     result = graph.invoke({"claim": claim}, config)
 
@@ -255,7 +258,7 @@ def demo_single_coverage():
     claim = _single_coverage("CLM-SC-001", [
         ("L1", "99213", 200.00),
     ])
-    config = {"configurable": {"thread_id": claim.claim_id}}
+    config = run_config(thread_id=claim.claim_id, user_id=_DEMO_ADJUSTER)
 
     result = graph.invoke({"claim": claim}, config)
 

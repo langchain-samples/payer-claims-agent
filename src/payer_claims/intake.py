@@ -265,21 +265,41 @@ def _to_domain(parsed: ClaimSchema) -> Claim:
 # ── the three intake steps, each traced + each on its task-fit model ─────────
 
 
+def _llm_span_metadata(model_name: str) -> dict[str, str]:
+    """Provider/model signals so LangSmith attributes cost to the LLM span."""
+    return {
+        "ls_provider": "anthropic",
+        "ls_model_name": model_name,
+        "ls_message_format": "anthropic",
+    }
+
+
 @traceable(name="intake_extract", run_type="llm", tags=["intake", "extract"])
 def _extract(raw_text: str, model_name: str, system_prompt: str = _EXTRACT_SYSTEM) -> ClaimSchema:
     """Transcribe untrusted raw text into the strict schema (fast model)."""
+    from langsmith.run_helpers import get_current_run_tree
+
+    run = get_current_run_tree()
+    if run is not None:
+        run.add_metadata(_llm_span_metadata(model_name))
     model = _chat(model_name).with_structured_output(ClaimSchema)
     return model.invoke(
         [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": raw_text},
-        ]
+        ],
+        {"metadata": _llm_span_metadata(model_name)},
     )
 
 
 @traceable(name="intake_verify", run_type="llm", tags=["intake", "verify"])
 def _verify(raw_text: str, parsed: ClaimSchema, model_name: str) -> VerifySchema:
     """Score transcription confidence (stronger model)."""
+    from langsmith.run_helpers import get_current_run_tree
+
+    run = get_current_run_tree()
+    if run is not None:
+        run.add_metadata(_llm_span_metadata(model_name))
     model = _chat(model_name).with_structured_output(VerifySchema)
     prompt = (
         "ORIGINAL CLAIM DOCUMENT:\n"
@@ -291,7 +311,8 @@ def _verify(raw_text: str, parsed: ClaimSchema, model_name: str) -> VerifySchema
         [
             {"role": "system", "content": _VERIFY_SYSTEM},
             {"role": "user", "content": prompt},
-        ]
+        ],
+        {"metadata": _llm_span_metadata(model_name)},
     )
 
 

@@ -35,6 +35,7 @@ from payer_claims import (
     confusion_counts,
     invoke_with_run_id,
     record_review_feedback,
+    run_config,
 )
 from payer_claims.scenarios import (
     dual_eligible,
@@ -118,6 +119,11 @@ def new_thread() -> str:
     return f"ui-{uuid.uuid4()}"
 
 
+def adjuster_id() -> str:
+    """Adjuster identity for per-adjuster trace filtering (env-overridable)."""
+    return os.environ.get("CLAIMS_ADJUSTER_ID", "demo-adjuster")
+
+
 def submit_claim(initial_state: dict) -> dict:
     """Invoke the graph on a fresh thread, capturing the trace's run id.
 
@@ -125,7 +131,7 @@ def submit_claim(initial_state: dict) -> dict:
     caller can render the error.
     """
     tid = new_thread()
-    config = {"configurable": {"thread_id": tid}}
+    config = run_config(thread_id=tid, user_id=adjuster_id())
     result, run_id = invoke_with_run_id(get_graph(), initial_state, config)
     return {"thread_id": tid, "config": config, "result": result, "run_id": run_id}
 
@@ -339,7 +345,7 @@ def _seed(queue: dict) -> None:
     graph = get_graph()
     for title, claim, extra in _SEED_SPECS:
         tid = new_thread()
-        config = {"configurable": {"thread_id": tid}}
+        config = run_config(thread_id=tid, user_id=adjuster_id())
         try:
             result, run_id = invoke_with_run_id(graph, {"claim": claim, **extra}, config)
         except Exception:
