@@ -1,0 +1,39 @@
+[project]
+name = "payer-claims-agent"
+version = "0.1.0"
+description = "Payer-to-payer insurance claims processing agent"
+requires-python = ">=3.10"
+dependencies = [
+    "langgraph>=1.0,<2.0",
+    "langchain>=1.0,<2.0",
+    "langchain-core>=1.0,<2.0",
+    "langchain-openai>=0.3.0",
+    "langchain-anthropic>=1.0,<2.0",
+    "langsmith>=0.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+evals = [
+    "pandas>=2.0",
+    "python-dotenv>=1.0",
+]
+ui = [
+    "streamlit>=1.36",
+    "python-dotenv>=1.0",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
